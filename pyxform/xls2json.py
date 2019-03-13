@@ -536,9 +536,66 @@ def workbook_to_json(
                 raise PyXFormError(row_format_string % row_number +
                     " Audits must always be named 'audit.'" +
                     " The name column should be left blank.")
-
             row['name'] = 'audit'
-            survey_meta.append(row)
+
+            new_dict = row.copy()
+            parameters = get_parameters(
+                new_dict.get('parameters', ''),
+                [constants.LOCATION_PRIORITY, constants.LOCATION_MIN_INTERVAL,
+                 constants.LOCATION_MAX_AGE])
+
+            if parameters:
+                if len(parameters.keys()) != 3:
+                    raise PyXFormError("To include location information in" +
+                        " the audit, '" + constants.LOCATION_PRIORITY +
+                        "', '" + constants.LOCATION_MIN_INTERVAL + "', and '" +
+                        constants.LOCATION_MAX_AGE + "' are required" +
+                        " parameters.")
+                else:
+                    if parameters[constants.LOCATION_PRIORITY] not in \
+                        ['no-power', 'low-power', 'balanced', 'high-accuracy']:
+                        raise PyXFormError(
+                                "Parameter " + constants.LOCATION_PRIORITY +
+                                " must be set to no-power, low-power, balanced,"
+                                " or high-accuracy: '%s' is an invalid value" %
+                                parameters[constants.LOCATION_PRIORITY])
+
+                    try:
+                        int(parameters[constants.LOCATION_MIN_INTERVAL])
+                    except:
+                        raise PyXFormError(
+                            "Parameter " + constants.LOCATION_MIN_INTERVAL +
+                            " must have an integer value.")
+                    if int(parameters[constants.LOCATION_MIN_INTERVAL]) < 0:
+                        raise PyXFormError(
+                            "Parameter " + constants.LOCATION_MIN_INTERVAL +
+                            " must be greater than or equal to zero.")
+
+                    try:
+                        int(parameters[constants.LOCATION_MAX_AGE])
+                    except:
+                        raise PyXFormError(
+                            "Parameter " + constants.LOCATION_MAX_AGE +
+                            " must have an integer value.")
+                    if int(parameters[constants.LOCATION_MAX_AGE]) < 0:
+                        raise PyXFormError(
+                                "Parameter " + constants.LOCATION_MAX_AGE +
+                                " must be greater  than or equal to zero.")
+
+                    if int(parameters[constants.LOCATION_MAX_AGE]) < \
+                        int(parameters[constants.LOCATION_MIN_INTERVAL]):
+                        raise PyXFormError(
+                            "Parameter " + constants.LOCATION_MAX_AGE +
+                            " must be greater than or equal to " +
+                            constants.LOCATION_MIN_INTERVAL + ".")
+
+                    new_dict['bind'] = new_dict.get('bind', {})
+                    new_dict['bind'].update(
+                        {'odk:' + constants.LOCATION_MAX_AGE: parameters[constants.LOCATION_MAX_AGE],
+                         'odk:' + constants.LOCATION_MIN_INTERVAL: parameters[constants.LOCATION_MIN_INTERVAL],
+                         'odk:' + constants.LOCATION_PRIORITY: parameters[constants.LOCATION_PRIORITY]})
+
+            survey_meta.append(new_dict)
             continue
 
         if question_type == 'calculate':
@@ -996,6 +1053,7 @@ def parse_file_to_workbook_dict(path, file_object=None):
     workbook_dicts are organized as follows:
     {sheetname : [{column_header : column_value_in_array_indexed_row}]}
     """
+
     (filepath, filename) = os.path.split(path)
     if not filename:
         raise PyXFormError("No filename.")
@@ -1003,7 +1061,7 @@ def parse_file_to_workbook_dict(path, file_object=None):
     if not extension:
         raise PyXFormError("No extension.")
 
-    if extension == ".xls" or extension == ".xlsx":
+    if extension in constants.SUPPORTED_FILE_EXTENSIONS:
         return xls_to_dict(file_object if file_object is not None else path)
     elif extension == ".csv":
         return csv_to_dict(file_object if file_object is not None else path)
